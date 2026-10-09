@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "test:unit": "node --test tests/unit/",
+    "test:unit": "node --test \"tests/unit/*.test.js\"",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui"
   },
