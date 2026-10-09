@@ -2,8 +2,10 @@
   "name": "claude-migration-assistant",
   "version": "1.0.0",
   "description": "Claude Migration Assistant QA Testing",
+  "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:unit": "node --test tests/unit/",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui"
   },
