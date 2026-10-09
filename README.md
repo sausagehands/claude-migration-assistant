@@ -14,11 +14,13 @@ When you switch Claude accounts, you lose your conversation history, memory, pro
 ## Two Export Modes
 
 ### Personal Export
-For individual users. Go to Claude Settings > Privacy > Export Data, download the ZIP, and drop it into the tool.
+For individual users. Go to Claude Settings > Privacy > Export Data and download **all** the ZIP files. Since 2026 the export is split into several shards (`conversations-000.zip`, `memories-000.zip`, `projects-000.zip`, `frames-000.zip`, `light_metadata-000.zip`). Either select all the ZIPs at once, or unzip them and drop the whole folder. Older single-ZIP exports still work.
+
+Memory (including per-project memories and memory files), projects and published artifacts are read straight from the export, so steps B1 and B2 fill themselves in.
 
 ### Admin Team Export
-For team admins closing an account. The admin export produces a folder of JSON files (`conversations.json`, `users.json`, `memories.json`, `projects.json`) covering all team members. The tool lets you:
-- Upload all JSON files at once
+For team admins closing an account. The admin export covers all team members. Both the legacy layout (`conversations.json`, `users.json`, `memories.json`, `projects.json`) and the sharded layout (`memories/<account>.json`, `projects/<uuid>.json`, ZIP shards) are supported. The tool lets you:
+- Drop the whole export folder, or select all its ZIP/JSON files at once
 - Pick a specific team member from a user list
 - Auto-populate their memory and projects from the admin data (skipping the manual prompt steps)
 
@@ -56,7 +58,7 @@ The app walks you through 10 steps in two tracks:
 - B5: Upload critical artifacts
 - B6: Validate the migration
 
-In admin mode, steps B1 and B2 are auto-populated from the export data.
+When the export includes memory and projects, steps B1 and B2 are auto-populated from it.
 
 ## What Transfers
 
@@ -86,10 +88,15 @@ js/
     step-definitions.js # Step metadata
     prompts.js          # Copy-paste prompts for manual steps
   processing/
-    zip-reader.js       # Reads personal export ZIPs (JSZip)
-    admin-reader.js     # Reads admin export JSON files
+    export-file-collector.js     # Unpacks dropped ZIPs / folders into lazy file entries (JSZip)
+    export-reader.js             # Classifies entries; reads legacy + sharded export layouts
+    admin-reader.js              # User list, per-user filtering, personal "take everything"
+    memory-document-builder.js   # Exported memory record -> one markdown document
     conversation-parser.js
-    artifact-extractor.js
+    artifact-extractor.js        # In-chat artifacts (artifacts tool, <antArtifact>)
+    created-file-extractor.js    # Files Claude wrote with create_file / str_replace
+    published-artifact-converter.js  # Published artifacts (artifacts/<id>/versions)
+    artifact-file-naming.js
     context-generator.js
     memory-generator.js
     markdown-formatter.js
@@ -101,12 +108,20 @@ js/
     steps/              # One module per step (step-a1.js .. step-b6.js)
 ```
 
+## Tests
+
+```bash
+npm run test:unit                                   # Node unit tests, no install needed
+node scripts/check-real-export.js /path/to/export   # Counts from a real unzipped export
+```
+
 ## Privacy
 
 All processing happens in your browser. The app:
 - Does not make any network requests (beyond loading CDN libraries)
 - Does not send your data anywhere
 - Stores only step completion state in localStorage (not conversation data)
+- Ignores `login_history.json` (IP addresses) entirely
 - Can export/import session progress as a local JSON file
 
 ## License

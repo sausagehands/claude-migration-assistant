@@ -44,7 +44,9 @@ function formatMemoryFiles(memoryFiles) {
   if (!Array.isArray(memoryFiles) || memoryFiles.length === 0) return null;
   const blocks = memoryFiles
     .filter(memoryFile => memoryFile && memoryFile.content)
-    .map(memoryFile => `### \`${memoryFile.path}\`\n\n${memoryFile.content.trim()}`);
+    // WHY: fenced so each file's own frontmatter and headings survive verbatim and
+    // don't break this document's heading structure. Four backticks allow ``` inside.
+    .map(memoryFile => `### \`${memoryFile.path}\`\n\n\`\`\`\`markdown\n${memoryFile.content.trim()}\n\`\`\`\``);
   if (blocks.length === 0) return null;
   return `## Memory Files\n\n${blocks.join('\n\n')}`;
 }

@@ -81,7 +81,7 @@ export function render(container, stepState, globalState) {
             <li>Navigate to <strong>Privacy</strong> section</li>
             <li>Click <strong>Export Data</strong></li>
             <li>Wait for the confirmation email (minutes to hours)</li>
-            <li>Download the ZIP file from the link in the email</li>
+            <li>Download <strong>all</strong> of the ZIP files from the link in the email (the export is now split into several, e.g. <code>conversations-000.zip</code>, <code>memories-000.zip</code>, <code>projects-000.zip</code>)</li>
           </ol>
           <a href="https://claude.ai/settings" target="_blank" rel="noopener" class="btn" style="margin-bottom: var(--space-lg);">
             ${icon('external-link', 14)}

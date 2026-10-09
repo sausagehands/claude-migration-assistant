@@ -19,7 +19,7 @@ function createInitialState() {
       exportMode: null,          // 'personal' | 'admin'
       adminUsers: null,          // parsed user list with conversation counts
       selectedUserUuid: null,
-      userMemory: null,          // string from memories.json for selected user
+      userMemory: null,          // markdown built from the export's memory record
       userProjects: null,        // filtered projects array for selected user
       conversations: null,
       conversationIndex: null,

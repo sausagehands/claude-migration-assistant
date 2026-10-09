@@ -1,9 +1,12 @@
 import { icon } from './icon.js';
+import { escapeHtml } from '../../utils.js';
+import { readDroppedFiles } from './dropped-folder-reader.js';
 
 export function createDropzone(container, options = {}) {
   const {
     accept = '*',
     multiple = false,
+    allowFolders = false,
     label = 'Drop file here or click to browse',
     hint = '',
     onFiles = () => {}
@@ -47,10 +50,12 @@ export function createDropzone(container, options = {}) {
     zoneEl.classList.remove('dropzone--dragover');
   });
 
-  zoneEl.addEventListener('drop', (e) => {
+  zoneEl.addEventListener('drop', async (e) => {
     e.preventDefault();
     zoneEl.classList.remove('dropzone--dragover');
-    const files = Array.from(e.dataTransfer.files);
+    const files = allowFolders
+      ? await readDroppedFiles(e.dataTransfer)
+      : Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       showFileInfo(zoneEl, files);
       onFiles(files);
@@ -76,13 +81,15 @@ export function createDropzone(container, options = {}) {
 
 function showFileInfo(zoneEl, files) {
   zoneEl.classList.add('dropzone--has-file');
-  const names = files.map(f => f.name).join(', ');
+  // WHY: a dropped export folder holds dozens of files; listing them all floods the zone.
+  const shownNames = files.slice(0, 3).map(f => f.name).join(', ');
+  const names = files.length > 3 ? `${shownNames} and ${files.length - 3} more` : shownNames;
   const size = files.reduce((s, f) => s + f.size, 0);
   const sizeStr = formatSize(size);
   zoneEl.innerHTML = `
     <div class="dropzone__file-info">
       ${icon('check-circle', 20)}
-      <span>${names}</span>
+      <span>${escapeHtml(names)}</span>
       <span style="color: var(--color-text-muted);">(${sizeStr})</span>
     </div>
   `;

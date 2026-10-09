@@ -1,15 +1,28 @@
-import { updateStep, setExportData, getState } from '../../state.js';
+// js/ui/steps/step-a2.js
+// Step A2: upload a Claude export (ZIPs, JSON files or a whole folder), pick whose data
+// to process, and show the resulting migration package preview.
+// Depends on: processing/export-file-collector.js, processing/export-reader.js,
+//   processing/admin-reader.js, step-a2-processing.js
+// Called by: ui/step-renderer.js
+
+import { setExportData, getState } from '../../state.js';
 import { escapeHtml } from '../../utils.js';
 import { createDropzone } from '../components/dropzone.js';
 import { createProgressIndicator } from '../components/progress-indicator.js';
 import { icon } from '../components/icon.js';
-import { readExportZip } from '../../processing/zip-reader.js';
-import { parseConversations, buildConversationIndex, categorizeByAge } from '../../processing/conversation-parser.js';
-import { extractArtifacts, buildArtifactIndex } from '../../processing/artifact-extractor.js';
-import { generateContextDocument } from '../../processing/context-generator.js';
-import { generateMemoryScript } from '../../processing/memory-generator.js';
+import { categorizeByAge } from '../../processing/conversation-parser.js';
 import { buildMigrationPackage, downloadBlob } from '../../processing/zip-writer.js';
-import { readAdminExport, buildUserList, filterByUser } from '../../processing/admin-reader.js';
+import { collectExportEntries } from '../../processing/export-file-collector.js';
+import { readClaudeExport } from '../../processing/export-reader.js';
+import { buildUserList, filterByUser, selectEntireExport } from '../../processing/admin-reader.js';
+import { processAndStoreUserSelection } from './step-a2-processing.js';
+
+const EXPORT_DROPZONE_OPTIONS = {
+  accept: '.zip,.json',
+  multiple: true,
+  allowFolders: true,
+  hint: 'Drop the whole unzipped export folder, or click to select all the export .zip files'
+};
 
 // Module-scoped: holds raw admin data so it doesn't bloat reactive state / localStorage
 let adminRawData = null;
@@ -24,17 +37,18 @@ export function render(container, stepState, globalState) {
   }
 }
 
-// ─── Personal mode (unchanged behavior) ───────────────────────────────────────
+// ─── Personal mode ────────────────────────────────────────────────────────────
 
 function renderPersonalMode(container, stepState, globalState) {
   const hasData = !!globalState.exportData.conversations;
 
   container.innerHTML = `
     <div class="step-section">
-      <div class="step-section__title">Upload Export ZIP</div>
+      <div class="step-section__title">Upload Your Export</div>
       <div class="step-section__description">
-        Drag your Claude data export ZIP file below. Everything is processed locally in your browser --
-        no data leaves your machine.
+        Claude now sends the export as several ZIP files (conversations, memories, projects, ...).
+        Drop the whole folder, or select all of the ZIP files at once. Everything is processed
+        locally in your browser -- no data leaves your machine.
       </div>
       <div id="a2-dropzone"></div>
     </div>
@@ -47,10 +61,9 @@ function renderPersonalMode(container, stepState, globalState) {
   const resultsArea = container.querySelector('#a2-results');
 
   createDropzone(dzContainer, {
-    accept: '.zip',
-    label: 'Drop your Claude export ZIP here',
-    hint: 'or click to browse (accepts .zip files)',
-    onFiles: (files) => processZip(files[0], progressArea, resultsArea)
+    ...EXPORT_DROPZONE_OPTIONS,
+    label: 'Drop your Claude export here',
+    onFiles: (files) => processPersonalUpload(files, progressArea, resultsArea)
   });
 
   if (hasData) {
@@ -58,58 +71,47 @@ function renderPersonalMode(container, stepState, globalState) {
   }
 }
 
-async function processZip(file, progressArea, resultsArea) {
+async function processPersonalUpload(files, progressArea, resultsArea) {
   const progressIndicator = createProgressIndicator(progressArea);
   resultsArea.innerHTML = '';
 
   try {
-    const raw = await readExportZip(file, (phase, pct) => {
-      progressIndicator.update(phase, pct);
-    });
-
-    progressIndicator.update('Parsing conversations...', 65);
-    await tick();
-    const conversations = parseConversations(raw);
-
-    progressIndicator.update('Extracting artifacts...', 75);
-    await tick();
-    const artifacts = extractArtifacts(conversations);
-
-    progressIndicator.update('Generating context document...', 85);
-    await tick();
-    const contextDocument = generateContextDocument(conversations);
-
-    progressIndicator.update('Generating memory import script...', 92);
-    await tick();
-    const memoryScript = generateMemoryScript(conversations);
-
-    setExportData('conversations', conversations);
-    setExportData('conversationIndex', buildConversationIndex(conversations));
-    setExportData('artifacts', artifacts);
-    setExportData('artifactIndex', buildArtifactIndex(artifacts));
-    setExportData('contextDocument', contextDocument);
-    setExportData('memoryScript', memoryScript);
-
-    const stats = {
-      conversationCount: conversations.length,
-      messageCount: conversations.reduce((n, c) => n + c.chat_messages.length, 0),
-      artifactCount: artifacts.length
-    };
-    updateStep('a2', { completed: true, stats });
-
+    const exportData = await readUploadedExport(files, progressIndicator);
+    await processAndStoreUserSelection(selectEntireExport(exportData), progressIndicator);
     progressIndicator.complete('Processing complete');
+    showWarnings(progressArea, exportData.warnings);
     showResults(resultsArea, getState());
-
   } catch (err) {
-    progressIndicator.update('Error: ' + err.message, 0);
-    resultsArea.innerHTML = `
-      <div class="info-box info-box--warning" style="margin-top: var(--space-md);">
-        <span class="info-box__icon">${icon('alert-triangle', 16)}</span>
-        <span>${escapeHtml(err.message)}</span>
-      </div>
-    `;
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+    showError(progressIndicator, resultsArea, err);
   }
+}
+
+async function readUploadedExport(files, progressIndicator) {
+  const entries = await collectExportEntries(files, (phase, pct) => progressIndicator.update(phase, pct));
+  return readClaudeExport(entries, (phase, pct) => progressIndicator.update(phase, 20 + Math.round(pct * 0.2)));
+}
+
+function showWarnings(progressArea, warnings) {
+  const warningHtml = warnings.map(w =>
+    `<div class="info-box info-box--warning" style="margin-top: var(--space-sm);">
+      <span class="info-box__icon">${icon('alert-triangle', 16)}</span>
+      <span>${escapeHtml(w)}</span>
+    </div>`
+  ).join('');
+  progressArea.insertAdjacentHTML('beforeend', warningHtml);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function showError(progressIndicator, targetArea, err) {
+  console.error('Export processing failed:', err);
+  progressIndicator.update('Error: ' + err.message, 0);
+  targetArea.innerHTML = `
+    <div class="info-box info-box--warning" style="margin-top: var(--space-md);">
+      <span class="info-box__icon">${icon('alert-triangle', 16)}</span>
+      <span>${escapeHtml(err.message)}</span>
+    </div>
+  `;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 // ─── Admin mode ───────────────────────────────────────────────────────────────
@@ -160,10 +162,10 @@ function renderAdminMode(container, stepState, globalState) {
   // Show upload dropzone
   uploadArea.innerHTML = `
     <div class="step-section">
-      <div class="step-section__title">Upload Admin Export Files</div>
+      <div class="step-section__title">Upload Admin Export</div>
       <div class="step-section__description">
-        Select all JSON files from your admin export folder. At minimum,
-        <strong>conversations.json</strong> is required.
+        Drop the whole admin export folder, or select all of its ZIP / JSON files at once.
+        At minimum, <strong>conversations.json</strong> is required.
         Everything is processed locally in your browser.
       </div>
       <div id="a2-admin-dz"></div>
@@ -171,10 +173,8 @@ function renderAdminMode(container, stepState, globalState) {
   `;
 
   createDropzone(uploadArea.querySelector('#a2-admin-dz'), {
-    accept: '.json',
-    multiple: true,
-    label: 'Drop admin export JSON files here',
-    hint: 'or click to browse (select all 4 JSON files)',
+    ...EXPORT_DROPZONE_OPTIONS,
+    label: 'Drop the admin export here',
     onFiles: (files) => processAdminUpload(files, progressArea, userPickerArea, resultsArea)
   });
 }
@@ -183,42 +183,22 @@ async function processAdminUpload(files, progressArea, userPickerArea, resultsAr
   const progressIndicator = createProgressIndicator(progressArea);
 
   try {
-    const data = await readAdminExport(files, (phase, pct) => {
-      progressIndicator.update(phase, pct);
-    });
+    const data = await readUploadedExport(files, progressIndicator);
 
     // Store raw data in module scope (not in state)
     adminRawData = data;
 
-    // Build user list and store in state
     const userList = buildUserList(data.users, data.conversations);
+    if (userList.length === 0) {
+      throw new Error('No conversations with an account ID were found. Is this a Claude export?');
+    }
     setExportData('adminUsers', userList);
 
     progressIndicator.complete(`Loaded ${data.conversations.length} conversations across ${userList.length} users`);
-
-    // Show warnings
-    if (data.warnings.length > 0) {
-      const warningHtml = data.warnings.map(w =>
-        `<div class="info-box info-box--warning" style="margin-top: var(--space-sm);">
-          <span class="info-box__icon">${icon('alert-triangle', 16)}</span>
-          <span>${escapeHtml(w)}</span>
-        </div>`
-      ).join('');
-      progressArea.insertAdjacentHTML('beforeend', warningHtml);
-    }
-
+    showWarnings(progressArea, data.warnings);
     renderUserPicker(userPickerArea, progressArea, resultsArea, getState());
-
-    if (typeof lucide !== 'undefined') lucide.createIcons();
   } catch (err) {
-    progressIndicator.update('Error: ' + err.message, 0);
-    progressArea.insertAdjacentHTML('beforeend', `
-      <div class="info-box info-box--warning" style="margin-top: var(--space-md);">
-        <span class="info-box__icon">${icon('alert-triangle', 16)}</span>
-        <span>${escapeHtml(err.message)}</span>
-      </div>
-    `);
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+    showError(progressIndicator, resultsArea, err);
   }
 }
 
@@ -278,62 +258,14 @@ async function processSelectedUser(userUuid, pickerArea, progressArea, resultsAr
 
   try {
     progressIndicator.update('Filtering user data...', 20);
-    await tick();
-
-    const { conversations: rawConvos, memory, projects } = filterByUser(adminRawData, userUuid);
-
-    progressIndicator.update('Parsing conversations...', 40);
-    await tick();
-    const conversations = parseConversations(rawConvos);
-
-    progressIndicator.update('Extracting artifacts...', 55);
-    await tick();
-    const artifacts = extractArtifacts(conversations);
-
-    progressIndicator.update('Generating context document...', 70);
-    await tick();
-    const contextDocument = generateContextDocument(conversations);
-
-    progressIndicator.update('Generating memory import script...', 85);
-    await tick();
-    const memoryScript = generateMemoryScript(conversations);
-
-    // Store in state
     setExportData('selectedUserUuid', userUuid);
-    setExportData('conversations', conversations);
-    setExportData('conversationIndex', buildConversationIndex(conversations));
-    setExportData('artifacts', artifacts);
-    setExportData('artifactIndex', buildArtifactIndex(artifacts));
-    setExportData('contextDocument', contextDocument);
-    setExportData('memoryScript', memoryScript);
-    setExportData('userMemory', memory);
-    setExportData('userProjects', projects);
-
-    const stats = {
-      conversationCount: conversations.length,
-      messageCount: conversations.reduce((n, c) => n + c.chat_messages.length, 0),
-      artifactCount: artifacts.length
-    };
-    updateStep('a2', { completed: true, stats });
-
+    await processAndStoreUserSelection(filterByUser(adminRawData, userUuid), progressIndicator);
     progressIndicator.complete('Processing complete');
-
-    // Hide the picker
     pickerArea.innerHTML = '';
-
     showResults(resultsArea, getState());
-
   } catch (err) {
-    progressIndicator.update('Error: ' + err.message, 0);
-    resultsArea.innerHTML = `
-      <div class="info-box info-box--warning" style="margin-top: var(--space-md);">
-        <span class="info-box__icon">${icon('alert-triangle', 16)}</span>
-        <span>${escapeHtml(err.message)}</span>
-      </div>
-    `;
-    // Re-enable picker
+    showError(progressIndicator, resultsArea, err);
     pickerArea.querySelectorAll('button').forEach(b => b.disabled = false);
-    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 }
 
@@ -424,6 +356,11 @@ function showResults(resultsArea, state) {
         <div class="output-tree__item output-tree__item--file" style="--depth:1">
           ${icon('file-text', 14)} memory-import-script.txt
         </div>
+        ${state.exportData.userMemory ? `
+        <div class="output-tree__item output-tree__item--file" style="--depth:1">
+          ${icon('file-text', 14)} memory-capture.md
+        </div>
+        ` : ''}
       </div>
     </div>
 
@@ -451,10 +388,6 @@ function showResults(resultsArea, state) {
   });
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
-}
-
-function tick() {
-  return new Promise(resolve => setTimeout(resolve, 10));
 }
 
 export function cleanup() {

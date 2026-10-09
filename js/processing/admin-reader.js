@@ -1,98 +1,32 @@
-/**
- * Reads and processes admin team export files (loose JSON, not ZIP).
- * Admin exports contain: users.json, conversations.json, memories.json, projects.json
- */
-
-const EXPECTED_FILES = {
-  'conversations.json': { required: true },
-  'users.json': { required: false },
-  'memories.json': { required: false },
-  'projects.json': { required: false }
-};
+// js/processing/admin-reader.js
+// Picks out one person's data from a read export: a user list for the admin picker,
+// per-user filtering for team exports, and an "everything" selection for personal exports.
+// Depends on: nothing (pure; input comes from export-reader.js readClaudeExport())
+// Called by: ui/steps/step-a2.js
 
 /**
- * Reads a set of admin export JSON files.
- * @param {File[]} files - Array of File objects dropped/selected by user
- * @param {function} onProgress - Optional progress callback (phase, pct)
- * @returns {{ users, conversations, memories, projects, warnings }}
+ * @typedef {{ conversations: object[], memoryRecord: object|null, projects: object[],
+ *   publishedArtifacts: object[] }} UserSelection
  */
-export async function readAdminExport(files, onProgress = () => {}) {
-  const result = { users: [], conversations: [], memories: [], projects: [], warnings: [] };
-  const fileMap = new Map();
-
-  for (const file of files) {
-    const name = file.name.toLowerCase();
-    if (name in EXPECTED_FILES) {
-      fileMap.set(name, file);
-    }
-  }
-
-  if (!fileMap.has('conversations.json')) {
-    throw new Error('conversations.json is required. Make sure you dropped the admin export files.');
-  }
-
-  const missing = Object.entries(EXPECTED_FILES)
-    .filter(([name, cfg]) => !cfg.required && !fileMap.has(name))
-    .map(([name]) => name);
-  if (missing.length > 0) {
-    result.warnings.push(`Optional files not found: ${missing.join(', ')}. Some features will be unavailable.`);
-  }
-
-  // Parse each file
-  let step = 0;
-  const total = fileMap.size;
-
-  for (const [name, file] of fileMap) {
-    onProgress(`Reading ${name}...`, Math.round((step / total) * 60));
-    const text = await file.text();
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (e) {
-      throw new Error(`Failed to parse ${name}: ${e.message}`);
-    }
-
-    if (!Array.isArray(parsed)) {
-      throw new Error(`${name} should contain a JSON array, got ${typeof parsed}`);
-    }
-
-    const key = name.replace('.json', '');
-    result[key] = parsed;
-    step++;
-  }
-
-  onProgress('Validating data...', 70);
-
-  // Validate conversations have account.uuid
-  const validConvos = result.conversations.filter(c => c.account && c.account.uuid);
-  if (validConvos.length === 0) {
-    throw new Error('No conversations with account.uuid found. Is this an admin export?');
-  }
-  if (validConvos.length < result.conversations.length) {
-    const dropped = result.conversations.length - validConvos.length;
-    result.warnings.push(`${dropped} conversation(s) missing account.uuid were skipped.`);
-    result.conversations = validConvos;
-  }
-
-  onProgress('Done', 100);
-  return result;
-}
 
 /**
  * Builds a user list cross-referenced with conversation counts.
  * Creates [Departed User] entries for UUIDs found in conversations but not in users.json.
+ * @param {object[]} users
+ * @param {object[]} conversations
+ * @returns {{ uuid: string, full_name: string, email_address: string, conversationCount: number }[]}
  */
 export function buildUserList(users, conversations) {
   const countByUuid = new Map();
   for (const c of conversations) {
-    const uuid = c.account.uuid;
+    const uuid = c.account?.uuid;
+    if (!uuid) continue;
     countByUuid.set(uuid, (countByUuid.get(uuid) || 0) + 1);
   }
 
   const knownUuids = new Set(users.map(u => u.uuid));
   const result = [];
 
-  // Add known users
   for (const u of users) {
     result.push({
       uuid: u.uuid,
@@ -102,7 +36,6 @@ export function buildUserList(users, conversations) {
     });
   }
 
-  // Add departed users (UUID in conversations but not in users.json)
   for (const uuid of countByUuid.keys()) {
     if (!knownUuids.has(uuid)) {
       result.push({
@@ -114,28 +47,35 @@ export function buildUserList(users, conversations) {
     }
   }
 
-  // Sort by conversation count descending
   result.sort((a, b) => b.conversationCount - a.conversationCount);
   return result;
 }
 
 /**
- * Filters admin export data for a specific user UUID.
- * Returns conversations, memory text, and projects for that user.
+ * Filters a team export down to one user.
+ * @param {import('./export-reader.js').ClaudeExport} exportData
+ * @param {string} userUuid
+ * @returns {UserSelection}
  */
-export function filterByUser(adminData, userUuid) {
-  const conversations = adminData.conversations.filter(
-    c => c.account.uuid === userUuid
-  );
+export function filterByUser(exportData, userUuid) {
+  return {
+    conversations: exportData.conversations.filter(c => c.account?.uuid === userUuid),
+    memoryRecord: exportData.memories.find(m => m.account_uuid === userUuid) || null,
+    projects: exportData.projects.filter(p => p.creator && p.creator.uuid === userUuid),
+    publishedArtifacts: exportData.publishedArtifacts.filter(a => a.ownerUuid === userUuid)
+  };
+}
 
-  const memoryEntry = adminData.memories.find(
-    m => m.account_uuid === userUuid
-  );
-  const memory = memoryEntry ? memoryEntry.conversations_memory : null;
-
-  const projects = adminData.projects.filter(
-    p => p.creator && p.creator.uuid === userUuid
-  );
-
-  return { conversations, memory, projects };
+/**
+ * Takes everything in a personal export — it only ever holds one account.
+ * @param {import('./export-reader.js').ClaudeExport} exportData
+ * @returns {UserSelection}
+ */
+export function selectEntireExport(exportData) {
+  return {
+    conversations: exportData.conversations,
+    memoryRecord: exportData.memories[0] || null,
+    projects: exportData.projects,
+    publishedArtifacts: exportData.publishedArtifacts
+  };
 }

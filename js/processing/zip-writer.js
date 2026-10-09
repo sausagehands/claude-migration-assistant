@@ -13,7 +13,7 @@ export async function buildMigrationPackage(state) {
 
   const zip = new JSZip();
   const root = zip.folder('migration-package');
-  const { conversations, artifacts, contextDocument, memoryScript, userProjects } = state.exportData;
+  const { conversations, artifacts, contextDocument, memoryScript, userProjects, userMemory } = state.exportData;
 
   if (!conversations || conversations.length === 0) {
     throw new Error('No conversations to package');
@@ -55,7 +55,7 @@ export async function buildMigrationPackage(state) {
     }
   }
 
-  // 4. Projects (admin mode)
+  // 4. Projects
   if (userProjects && userProjects.length > 0) {
     const projFolder = root.folder('projects');
     const projIndex = userProjects.map(p => ({
@@ -89,6 +89,11 @@ export async function buildMigrationPackage(state) {
   // 6. Memory import script
   if (memoryScript) {
     root.file('memory-import-script.txt', memoryScript);
+  }
+
+  // 7. Claude's own memory, when the export included it
+  if (userMemory) {
+    root.file('memory-capture.md', userMemory);
   }
 
   // Generate ZIP blob

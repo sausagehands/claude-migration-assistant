@@ -8,10 +8,9 @@ import { icon } from '../components/icon.js';
 let projectsAbort = null;
 
 export function render(container, stepState, globalState) {
-  const isAdmin = globalState.exportData.exportMode === 'admin';
   const adminProjects = globalState.exportData.userProjects;
 
-  if (isAdmin && adminProjects && adminProjects.length > 0) {
+  if (adminProjects && adminProjects.length > 0) {
     renderAdminMode(container, stepState, adminProjects);
   } else {
     renderManualMode(container, stepState);
@@ -24,11 +23,11 @@ function renderAdminMode(container, stepState, adminProjects) {
   container.innerHTML = `
     <div class="info-box info-box--success" style="margin-bottom: var(--space-lg);">
       <span class="info-box__icon">${icon('check-circle', 16)}</span>
-      <span>Projects were auto-populated from the admin export. ${adminProjects.length} project(s) found.</span>
+      <span>Projects were auto-populated from your export. ${adminProjects.length} project(s) found.</span>
     </div>
 
     <div class="step-section">
-      <div class="step-section__title">Projects from Admin Export</div>
+      <div class="step-section__title">Projects from Your Export</div>
       <div class="step-section__description">
         Review each project's details below. Custom instructions and knowledge documents can be
         copied individually for recreation in the new account.
