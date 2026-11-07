@@ -62,24 +62,25 @@ export function createMarkdownViewer(container, options = {}) {
 }
 
 function renderMarkdown(md) {
-  if (typeof marked !== 'undefined' && marked.parse) {
+  return renderMarkdownSafely(md, {
+    markedLib: typeof marked !== 'undefined' ? marked : undefined,
+    purifier: typeof DOMPurify !== 'undefined' ? DOMPurify : undefined
+  });
+}
+
+// WHY injected libs: node tests pass their own marked/DOMPurify; the browser passes the CDN globals.
+export function sanitise(html, purifier) {
+  return purifier.sanitize(html);
+}
+
+// Never returns unsanitised HTML: if either CDN script is missing, show escaped text.
+export function renderMarkdownSafely(md, { markedLib, purifier }) {
+  if (markedLib && markedLib.parse && purifier && purifier.sanitize) {
     try {
-      const raw = marked.parse(md);
-      return sanitizeHtml(raw);
+      return sanitise(markedLib.parse(md), purifier);
     } catch (e) {
       console.warn('Markdown parse error:', e);
     }
   }
-  // Fallback: simple whitespace preservation
   return `<pre style="white-space: pre-wrap;">${escapeHtml(md)}</pre>`;
 }
-
-function sanitizeHtml(html) {
-  // Strip script/iframe/object/embed tags and on* event attributes
-  return html
-    .replace(/<\s*(script|iframe|object|embed|form|base|meta|link)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, '')
-    .replace(/<\s*(script|iframe|object|embed|form|base|meta|link)[^>]*\/?>/gi, '')
-    .replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript\s*:/gi, '');
-}
-
