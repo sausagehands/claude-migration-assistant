@@ -78,3 +78,76 @@ test('converts published artifacts into downloadable html files', () => {
   assert.equal(artifact.extractionMethod, 'published');
   assert.match(artifact.fileName, /^design-directions-.*\.html$/);
 });
+
+test('an update inserts dollar sequences literally', () => {
+  const conversation = conversationWith([
+    { toolName: 'artifacts', toolInput: { command: 'create', id: 'a1', title: 'T', type: 'text/plain', content: 'const b = 2;' } },
+    { toolName: 'artifacts', toolInput: { command: 'update', id: 'a1', old_str: 'const b = 2;', new_str: 'x = `$&` $` $\' $1 $$' } }
+  ]);
+  const [artifact] = extractArtifacts([conversation]);
+  assert.equal(artifact.content, 'x = `$&` $` $\' $1 $$');
+});
+
+test('a str_replace inserts dollar sequences literally', () => {
+  const conversation = conversationWith([
+    { toolName: 'create_file', toolInput: { path: '/home/claude/a.js', file_text: 'const a = 1;\nconst b = 2;' } },
+    { toolName: 'str_replace', toolInput: { path: '/home/claude/a.js', old_str: 'const b = 2;', new_str: '$(\'.x\'); // $& $` $\'' } }
+  ]);
+  assert.equal(extractCreatedFiles([conversation])[0].content, 'const a = 1;\n$(\'.x\'); // $& $` $\'');
+});
+
+test('an update with no old_str is ignored', () => {
+  const conversation = conversationWith([
+    { toolName: 'artifacts', toolInput: { command: 'create', id: 'a1', title: 'T', type: 'text/plain', content: 'body' } },
+    { toolName: 'artifacts', toolInput: { command: 'update', id: 'a1', new_str: 'PREFIX' } }
+  ]);
+  assert.equal(extractArtifacts([conversation])[0].content, 'body');
+});
+
+test('an update with an empty old_str is ignored', () => {
+  const conversation = conversationWith([
+    { toolName: 'artifacts', toolInput: { command: 'create', id: 'a1', title: 'T', type: 'text/plain', content: 'body' } },
+    { toolName: 'artifacts', toolInput: { command: 'update', id: 'a1', old_str: '', new_str: 'PREFIX' } }
+  ]);
+  assert.equal(extractArtifacts([conversation])[0].content, 'body');
+});
+
+test('a str_replace with an empty old_str is ignored', () => {
+  const conversation = conversationWith([
+    { toolName: 'create_file', toolInput: { path: '/home/claude/a.txt', file_text: 'body' } },
+    { toolName: 'str_replace', toolInput: { path: '/home/claude/a.txt', old_str: '', new_str: 'PREFIX' } }
+  ]);
+  assert.equal(extractCreatedFiles([conversation])[0].content, 'body');
+});
+
+const idlessCreate = (content) => ({ toolName: 'artifacts', toolInput: { command: 'create', title: 'Same', type: 'text/plain', content } });
+
+test('artifact file names are stable across runs', () => {
+  const build = () => conversationWith([idlessCreate('one'), idlessCreate('two')]);
+  const first = extractArtifacts([build()]).map(a => a.fileName);
+  const second = extractArtifacts([build()]).map(a => a.fileName);
+  assert.deepEqual(first, second);
+});
+
+test('two artifacts without ids in one conversation do not collide', () => {
+  const records = extractArtifacts([conversationWith([idlessCreate('one'), idlessCreate('two')])]);
+  assert.equal(records.length, 2);
+  assert.notEqual(records[0].fileName, records[1].fileName);
+  assert.notEqual(records[0].id, records[1].id);
+});
+
+test('an id-less artifact in a message without a uuid still gets a stable, distinct id', () => {
+  const conv = conversationWith([idlessCreate('one'), idlessCreate('two')]);
+  conv.chat_messages.forEach(m => { m.uuid = ''; });
+  const ids = extractArtifacts([conv]).map(a => a.id);
+  assert.equal(new Set(ids).size, 2);
+  assert.deepEqual(ids, extractArtifacts([conv]).map(a => a.id));
+});
+
+test('an id in the record still wins', () => {
+  const [artifact] = extractArtifacts([conversationWith([
+    { toolName: 'artifacts', toolInput: { command: 'create', id: 'my-id', title: 'Same', type: 'text/plain', content: 'x' } }
+  ])]);
+  assert.equal(artifact.id, 'my-id');
+  assert.match(artifact.fileName, /^same-[0-9a-f]{6}\.txt$/);
+});

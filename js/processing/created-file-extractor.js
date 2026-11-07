@@ -62,7 +62,8 @@ function recordCreatedFile(filesByPath, input, message, conversation) {
 
 function applyStrReplace(filesByPath, input, message) {
   const file = filesByPath.get(input.path);
-  if (!file || typeof input.old_str !== 'string') return;
-  file.content = file.content.replace(input.old_str, input.new_str || '');
+  if (!file || typeof input.old_str !== 'string' || input.old_str === '') return;
+  // WHY: a function replacement is never parsed for $& / $` / $' patterns.
+  file.content = file.content.replace(input.old_str, () => input.new_str || '');
   file.timestamp = message.created_at;
 }

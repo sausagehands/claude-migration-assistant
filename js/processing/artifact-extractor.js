@@ -5,7 +5,7 @@
 // Called by: ui/steps/step-a2.js, zip-writer.js (buildArtifactIndex)
 // IMPORTANT: "update" commands carry only old_str/new_str — never treat them as full content.
 
-import { getExtension, buildArtifactFileName } from './artifact-file-naming.js';
+import { getExtension, buildArtifactFileName, shortHash } from './artifact-file-naming.js';
 
 /**
  * @param {object[]} conversations - output of parseConversations()
@@ -15,11 +15,11 @@ export function extractArtifacts(conversations) {
   const artifactMap = new Map();
 
   for (const conv of conversations) {
-    for (const msg of conv.chat_messages) {
-      if (msg.sender !== 'assistant') continue;
-      extractFromContent(msg, conv, artifactMap);
+    conv.chat_messages.forEach((msg, msgIndex) => {
+      if (msg.sender !== 'assistant') return;
+      extractFromContent(msg, conv, artifactMap, msgIndex);
       extractFromText(msg, conv, artifactMap);
-    }
+    });
   }
 
   for (const artifact of artifactMap.values()) {
@@ -31,17 +31,23 @@ export function extractArtifacts(conversations) {
 
 // WHY: messages are already sorted oldest-first, so applying commands in order
 // reproduces the artifact as the user last saw it.
-function extractFromContent(msg, conv, artifactMap) {
+function extractFromContent(msg, conv, artifactMap, msgIndex) {
   if (!msg.content) return;
 
-  for (const item of msg.content) {
+  for (const [itemIndex, item] of msg.content.entries()) {
     if (item.type !== 'tool_use' || item.name !== 'artifacts' || !item.input) continue;
     const input = item.input;
-    const id = input.id || input.version_uuid || `gen-${Math.random().toString(36).slice(2, 10)}`;
+    // WHY: a random id changed file names between runs and orphaned the A4 important flags.
+    // msg.uuid can be empty, so the message position keeps the key stable for a given export.
+    const fallbackId = `gen-${shortHash(`${conv.uuid}:${msg.uuid || ''}:${msgIndex}:${itemIndex}`)}`;
+    const id = input.id || input.version_uuid || fallbackId;
     const existing = artifactMap.get(id);
 
     if (input.command === 'update' && existing) {
-      existing.content = existing.content.replace(input.old_str || '', input.new_str || '');
+      // WHY: an update with no needle would otherwise prepend new_str to the whole artifact.
+      if (typeof input.old_str !== 'string' || input.old_str === '') continue;
+      // WHY: a function replacement is never parsed for $& / $` / $' patterns.
+      existing.content = existing.content.replace(input.old_str, () => input.new_str || '');
       existing.timestamp = msg.created_at;
       continue;
     }
