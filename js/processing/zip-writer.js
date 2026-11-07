@@ -5,6 +5,7 @@
 import { formatConversationAsMarkdown, formatSummary } from './markdown-formatter.js';
 import { categorizeByAge, buildConversationIndex } from './conversation-parser.js';
 import { buildArtifactIndex } from './artifact-extractor.js';
+import { createNameDeduper } from './unique-file-names.js';
 
 export async function buildMigrationPackage(state) {
   if (!window.JSZip) {
@@ -31,17 +32,17 @@ export async function buildMigrationPackage(state) {
   const { recent, archive } = categorizeByAge(conversations);
 
   const recentFolder = convsFolder.folder('recent');
+  const recentNames = createNameDeduper();
   for (const conv of recent) {
     const md = formatConversationAsMarkdown(conv);
-    const fileName = safeFileName(conv.name) + '.md';
-    recentFolder.file(fileName, md);
+    recentFolder.file(recentNames(safeFileName(conv.name), '.md'), md);
   }
 
   const archiveFolder = convsFolder.folder('archive');
+  const archiveNames = createNameDeduper();
   for (const conv of archive) {
     const md = formatConversationAsMarkdown(conv);
-    const fileName = safeFileName(conv.name) + '.md';
-    archiveFolder.file(fileName, md);
+    archiveFolder.file(archiveNames(safeFileName(conv.name), '.md'), md);
   }
 
   // 3. Artifacts
@@ -65,8 +66,9 @@ export async function buildMigrationPackage(state) {
     }));
     projFolder.file('index.json', JSON.stringify(projIndex, null, 2));
 
+    const projDirNames = createNameDeduper();
     for (const proj of userProjects) {
-      const projDir = projFolder.folder(safeFileName(proj.name));
+      const projDir = projFolder.folder(projDirNames(safeFileName(proj.name)));
 
       // Write project metadata as a readable markdown file
       let readme = `# ${proj.name}\n\n`;
@@ -75,8 +77,11 @@ export async function buildMigrationPackage(state) {
       projDir.file('README.md', readme);
 
       // Write project docs
+      const docNames = createNameDeduper();
+      docNames('README', '.md');
       for (const doc of (proj.docs || [])) {
-        projDir.file(doc.filename, doc.content);
+        const [docBase, docExt] = splitExtension(doc.filename || 'untitled');
+        projDir.file(docNames(docBase, docExt), doc.content);
       }
     }
   }
@@ -119,6 +124,15 @@ export function downloadBlob(blob, filename) {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+}
+
+// Splits "notes.txt" into ["notes", ".txt"] so a dedupe suffix lands before the
+// extension ("notes-2.txt") rather than after it.
+function splitExtension(fileName) {
+  const dotIndex = fileName.lastIndexOf('.');
+  return dotIndex > 0
+    ? [fileName.slice(0, dotIndex), fileName.slice(dotIndex)]
+    : [fileName, ''];
 }
 
 function safeFileName(name) {
