@@ -80,7 +80,9 @@ export async function buildMigrationPackage(state) {
       const docNames = createNameDeduper();
       docNames('README', '.md');
       for (const doc of (proj.docs || [])) {
-        const [docBase, docExt] = splitExtension(doc.filename || 'untitled');
+        const [rawBase, rawExt] = splitExtension(doc.filename || 'untitled');
+        const docBase = safeFileName(rawBase);
+        const docExt = safeExtension(rawExt);
         projDir.file(docNames(docBase, docExt), doc.content);
       }
     }
@@ -135,10 +137,16 @@ function splitExtension(fileName) {
     : [fileName, ''];
 }
 
-function safeFileName(name) {
+export function safeFileName(name) {
   return (name || 'untitled')
     .replace(/[^a-zA-Z0-9\s-_]/g, '')
     .replace(/\s+/g, '-')
     .toLowerCase()
     .slice(0, 60) || 'untitled';
+}
+
+// WHY: an extension from the export can carry path characters too ("x./../y").
+export function safeExtension(extension) {
+  const cleaned = extension.replace(/[^a-zA-Z0-9.]/g, '');
+  return /^\.[a-zA-Z0-9]+$/.test(cleaned) ? cleaned.toLowerCase() : '';
 }
