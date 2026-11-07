@@ -155,14 +155,16 @@ export function buildConversationIndex(conversations) {
 export function categorizeByAge(conversations, recentDays = 90) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - recentDays);
-  const cutoffStr = cutoff.toISOString();
+  const cutoffMs = cutoff.getTime();
 
   const recent = [];
   const archive = [];
 
   for (const conv of conversations) {
-    const date = conv.updated_at || conv.created_at;
-    if (date >= cutoffStr) {
+    // WHY: string comparison ignored timezone offsets, so conversations near the
+    // cutoff were filed into the wrong folder. Unparseable dates stay visible in recent.
+    const parsed = Date.parse(conv.updated_at || conv.created_at || '');
+    if (Number.isNaN(parsed) || parsed >= cutoffMs) {
       recent.push(conv);
     } else {
       archive.push(conv);
