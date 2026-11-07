@@ -40,6 +40,12 @@ npx serve .
 
 Then open http://localhost:8000 in your browser.
 
+**You need to be online the first time.** The page itself is local, but JSZip, marked, DOMPurify,
+Lucide and FileSaver load from CDNs, so with no network the markdown preview falls back to plain
+text and the ZIP download does not work at all. Your export data is still never uploaded anywhere --
+only the libraries come down. To run it fully offline, vendor those five scripts next to
+`index.html` and point the tags at the local copies.
+
 ## How It Works
 
 The app walks you through 10 steps in two tracks:
