@@ -101,11 +101,14 @@ js/
     memory-generator.js
     markdown-formatter.js
     zip-writer.js       # Builds migration package ZIP
+    unique-file-names.js # Per-folder name allocator; stops same-titled
+                         #   conversations overwriting each other in the package
   ui/
     sidebar.js          # Step navigation
     step-renderer.js    # Dynamic step loading
     components/         # Reusable UI components
-    steps/              # One module per step (step-a1.js .. step-b6.js)
+    steps/              # One module per step (step-a1.js .. step-b6.js),
+                        #   plus step-a2-processing.js and step-a2-results-view.js
 ```
 
 ## Tests
