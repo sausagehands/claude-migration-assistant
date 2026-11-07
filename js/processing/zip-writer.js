@@ -48,10 +48,10 @@ export async function buildMigrationPackage(state) {
   // 3. Artifacts
   if (artifacts && artifacts.length > 0) {
     const artFolder = root.folder('artifacts');
-    const artIndex = buildArtifactIndex(artifacts);
+    const artNames = allocateArtifactNames(artifacts);
+    const artIndex = buildDedupedArtifactIndex(artifacts);
     artFolder.file('index.json', JSON.stringify(artIndex, null, 2));
 
-    const artNames = allocateArtifactNames(artifacts);
     artifacts.forEach((art, index) => {
       artFolder.file(artNames[index], art.content);
     });
@@ -127,6 +127,13 @@ export function downloadBlob(blob, filename) {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+}
+
+// WHY: index.json must name the file actually written, so the index is built from the
+// allocated names rather than the raw fileName.
+export function buildDedupedArtifactIndex(artifacts) {
+  const names = allocateArtifactNames(artifacts);
+  return buildArtifactIndex(artifacts.map((art, index) => ({ ...art, fileName: names[index] })));
 }
 
 // WHY: JSZip overwrites same-named entries silently, so every artifact name goes
