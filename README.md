@@ -60,6 +60,41 @@ The app walks you through 10 steps in two tracks:
 
 When the export includes memory and projects, steps B1 and B2 are auto-populated from it.
 
+## After You Download the Package
+
+Step A2 saves `migration-package.zip`. Unzip it -- everything is inside `migration-package/`:
+
+```
+migration-package/
+  summary.md                  what the export contained
+  context-document.md         paste into the new account's project or memory
+  memory-import-script.txt    prompts to replay memory in the new account
+  memory-capture.md           memory as captured from the old account
+  conversations/
+    index.json                every conversation, with dates and counts
+    recent/                   last 90 days, one .md per conversation
+    archive/                  everything older
+  artifacts/
+    index.json                names the file written for each artifact
+    <artifact files>          source code and documents, as real files
+  projects/
+    index.json
+    <project>/README.md       the project's blueprint, plus its docs
+```
+
+Nothing here imports itself -- Claude has no import endpoint, so the package is the input to Track B:
+
+1. Read `summary.md` first and check the counts match what you expect.
+2. Keep the unzipped folder somewhere permanent. `conversations/` is your readable archive of the
+   old account and the only copy once that account is gone.
+3. Work steps B3 to B6 in the app with the folder open beside it: B3 pastes
+   `memory-import-script.txt`, B4 recreates each project from its `README.md`, B5 uploads the
+   artifacts you marked important in A4, B6 validates the result.
+4. Re-upload knowledge files yourself from your originals. The export does not contain them.
+
+The ZIP is built in your browser and never uploaded anywhere, so it is yours to keep, move or
+delete -- and worth a backup before you close the old account.
+
 ## What Transfers
 
 | Data | Fidelity | Method |
