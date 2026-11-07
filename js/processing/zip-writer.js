@@ -51,9 +51,10 @@ export async function buildMigrationPackage(state) {
     const artIndex = buildArtifactIndex(artifacts);
     artFolder.file('index.json', JSON.stringify(artIndex, null, 2));
 
-    for (const art of artifacts) {
-      artFolder.file(art.fileName, art.content);
-    }
+    const artNames = allocateArtifactNames(artifacts);
+    artifacts.forEach((art, index) => {
+      artFolder.file(artNames[index], art.content);
+    });
   }
 
   // 4. Projects
@@ -126,6 +127,17 @@ export function downloadBlob(blob, filename) {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+}
+
+// WHY: JSZip overwrites same-named entries silently, so every artifact name goes
+// through a deduper. "index" is claimed first so an artifact cannot clobber index.json.
+export function allocateArtifactNames(artifacts) {
+  const artNames = createNameDeduper();
+  artNames('index', '.json');
+  return artifacts.map(art => {
+    const [artBase, artExt] = splitExtension(art.fileName);
+    return artNames(artBase, artExt);
+  });
 }
 
 // Splits "notes.txt" into ["notes", ".txt"] so a dedupe suffix lands before the
