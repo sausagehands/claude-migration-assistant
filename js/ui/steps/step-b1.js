@@ -3,6 +3,7 @@ import { createCopyableBlock } from '../components/copyable-block.js';
 import { createDropzone } from '../components/dropzone.js';
 import { PROMPTS } from '../../data/prompts.js';
 import { icon } from '../components/icon.js';
+import { downloadBlob } from '../../processing/zip-writer.js';
 
 export function render(container, stepState, globalState) {
   const adminMemory = globalState.exportData.userMemory;
@@ -54,13 +55,7 @@ function renderAdminMode(container, stepState, memoryText) {
 
   // Download button
   container.querySelector('#b1-download-mem').addEventListener('click', () => {
-    const blob = new Blob([memoryText], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'memory-capture.md';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([memoryText], { type: 'text/markdown' }), 'memory-capture.md');
   });
 
   const cb = container.querySelector('#b1-done');

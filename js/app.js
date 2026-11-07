@@ -1,6 +1,7 @@
 import { loadFromStorage, exportSessionJSON, importSessionJSON, resetState } from './state.js';
 import { renderSidebar, renderProgressBar } from './ui/sidebar.js';
 import { initStepRenderer } from './ui/step-renderer.js';
+import { downloadBlob } from './processing/zip-writer.js';
 
 export function init() {
   // Restore saved state
@@ -34,12 +35,7 @@ function setupHeaderActions() {
     exportBtn.addEventListener('click', () => {
       const json = exportSessionJSON();
       const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `migration-session-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `migration-session-${new Date().toISOString().slice(0, 10)}.json`);
     });
   }
 
